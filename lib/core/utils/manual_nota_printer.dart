@@ -9,6 +9,7 @@ import '../../data/database/app_database.dart';
 import '../../presentation/providers/manual_nota_provider.dart';
 import '../../presentation/providers/settings_provider.dart';
 import 'currency.dart';
+import 'receipt_text_wrap.dart';
 
 /// Builder struk untuk Nota Manual — memakai library ESC/POS yang sama
 /// (esc_pos_utils_plus + print_bluetooth_thermal) dengan Kasir Otomatis,
@@ -62,16 +63,20 @@ class ManualNotaPrinter {
       }
     }
 
-    bytes += generator.text(storeName,
-        styles: const PosStyles(
-          align: PosAlign.center,
-          bold: true,
-          height: PosTextSize.size2,
-          width: PosTextSize.size2,
-        ));
+    for (final line in wrapReceiptText(storeName, paperSize: paperSize, doubleWidth: true)) {
+      bytes += generator.text(line,
+          styles: const PosStyles(
+            align: PosAlign.center,
+            bold: true,
+            height: PosTextSize.size2,
+            width: PosTextSize.size2,
+          ));
+    }
     if (settings.storeAddress.isNotEmpty) {
-      bytes += generator.text(settings.storeAddress,
-          styles: const PosStyles(align: PosAlign.center));
+      for (final line in wrapReceiptText(settings.storeAddress, paperSize: paperSize)) {
+        bytes += generator.text(line,
+            styles: const PosStyles(align: PosAlign.center));
+      }
     }
     if (settings.storePhone.isNotEmpty) {
       bytes += generator.text('Telp: ${settings.storePhone}',
@@ -90,7 +95,9 @@ class ManualNotaPrinter {
     bytes += generator.hr();
 
     for (final item in items) {
-      bytes += generator.text(item.name, styles: const PosStyles(bold: true));
+      for (final line in wrapReceiptText(item.name, paperSize: paperSize)) {
+        bytes += generator.text(line, styles: const PosStyles(bold: true));
+      }
       bytes += generator.row([
         PosColumn(
           text: '  ${item.qty} x ${CurrencyFormatter.format(item.price)}',
@@ -139,8 +146,10 @@ class ManualNotaPrinter {
     bytes += generator.hr();
 
     if (settings.storeNote.isNotEmpty) {
-      bytes += generator.text(settings.storeNote,
-          styles: const PosStyles(align: PosAlign.center, bold: true));
+      for (final line in wrapReceiptText(settings.storeNote, paperSize: paperSize)) {
+        bytes += generator.text(line,
+            styles: const PosStyles(align: PosAlign.center, bold: true));
+      }
     }
     bytes += generator.feed(3);
     bytes += generator.cut();

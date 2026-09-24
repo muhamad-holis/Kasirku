@@ -9,6 +9,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:print_bluetooth_thermal/print_bluetooth_thermal.dart';
 import '../../../core/utils/bluetooth_permission.dart';
+import '../../../core/utils/receipt_text_wrap.dart';
 import 'package:esc_pos_utils_plus/esc_pos_utils_plus.dart';
 import 'package:image/image.dart' as img;
 import 'package:intl/intl.dart';
@@ -3227,16 +3228,20 @@ class _SuccessDialogState extends ConsumerState<_SuccessDialog> {
     }
 
     // ── Header toko ─────────────────────────────────────────────────────────
-    bytes += generator.text(storeName,
-      styles: const PosStyles(
-        align: PosAlign.center,
-        bold: true,
-        height: PosTextSize.size2,
-        width: PosTextSize.size2,
-      ));
+    for (final line in wrapReceiptText(storeName, paperSize: paperSize, doubleWidth: true)) {
+      bytes += generator.text(line,
+        styles: const PosStyles(
+          align: PosAlign.center,
+          bold: true,
+          height: PosTextSize.size2,
+          width: PosTextSize.size2,
+        ));
+    }
     if (storeAddress.isNotEmpty) {
-      bytes += generator.text(storeAddress,
-        styles: const PosStyles(align: PosAlign.center));
+      for (final line in wrapReceiptText(storeAddress, paperSize: paperSize)) {
+        bytes += generator.text(line,
+          styles: const PosStyles(align: PosAlign.center));
+      }
     }
     if (storePhone.isNotEmpty) {
       bytes += generator.text('Telp: $storePhone',
@@ -3255,8 +3260,9 @@ class _SuccessDialogState extends ConsumerState<_SuccessDialog> {
 
     // ── Items ────────────────────────────────────────────────────────────────
     for (final item in widget.cart.items) {
-      bytes += generator.text(item.product.name,
-        styles: const PosStyles(bold: true));
+      for (final line in wrapReceiptText(item.product.name, paperSize: paperSize)) {
+        bytes += generator.text(line, styles: const PosStyles(bold: true));
+      }
       bytes += generator.row([
         PosColumn(
           text: '  ${item.quantity} x ${CurrencyFormatter.format(item.product.sellPrice)}',
@@ -3323,8 +3329,10 @@ class _SuccessDialogState extends ConsumerState<_SuccessDialog> {
 
     // ── Footer dari pengaturan ───────────────────────────────────────────────
     if (storeNote.isNotEmpty) {
-      bytes += generator.text(storeNote,
-        styles: const PosStyles(align: PosAlign.center, bold: true));
+      for (final line in wrapReceiptText(storeNote, paperSize: paperSize)) {
+        bytes += generator.text(line,
+          styles: const PosStyles(align: PosAlign.center, bold: true));
+      }
     }
     bytes += generator.feed(3);
     bytes += generator.cut();

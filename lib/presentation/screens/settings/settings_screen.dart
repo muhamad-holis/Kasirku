@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'dart:typed_data';
 import '../../../core/utils/bluetooth_permission.dart';
+import '../../../core/utils/receipt_text_wrap.dart';
 import 'package:flutter/material.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:flutter/services.dart';
@@ -599,15 +600,19 @@ class SettingsScreen extends ConsumerWidget {
           '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
 
       // ── Header toko ─────────────────────────────────────────────────────
-      bytes += generator.text(storeName,
-          styles: const PosStyles(
-              align: PosAlign.center,
-              bold: true,
-              height: PosTextSize.size2,
-              width: PosTextSize.size2));
+      for (final line in wrapReceiptText(storeName, paperSize: paperSize, doubleWidth: true)) {
+        bytes += generator.text(line,
+            styles: const PosStyles(
+                align: PosAlign.center,
+                bold: true,
+                height: PosTextSize.size2,
+                width: PosTextSize.size2));
+      }
       if (store.storeAddress.isNotEmpty) {
-        bytes += generator.text(store.storeAddress,
-            styles: const PosStyles(align: PosAlign.center));
+        for (final line in wrapReceiptText(store.storeAddress, paperSize: paperSize)) {
+          bytes += generator.text(line,
+              styles: const PosStyles(align: PosAlign.center));
+        }
       }
       if (store.storePhone.isNotEmpty) {
         bytes += generator.text('Telp: ${store.storePhone}',

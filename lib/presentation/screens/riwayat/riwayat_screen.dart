@@ -22,6 +22,7 @@ import '../../../core/utils/manual_nota_printer.dart';
 import '../kasir/manual_nota_screen.dart';
 import '../../../data/database/app_database.dart';
 import '../../../core/utils/bluetooth_permission.dart';
+import '../../../core/utils/receipt_text_wrap.dart';
 
 /// Warna khas untuk membedakan entri "Nota Manual" dari transaksi kasir
 /// otomatis di daftar Riwayat (lihat _RiwayatEntry).
@@ -1014,13 +1015,17 @@ class _CetakSheetState extends ConsumerState<_CetakSheet> {
       }
     }
 
-    bytes += generator.text(storeName,
-        styles: const PosStyles(
-            align: PosAlign.center, bold: true,
-            height: PosTextSize.size2, width: PosTextSize.size2));
+    for (final line in wrapReceiptText(storeName, paperSize: paperSize, doubleWidth: true)) {
+      bytes += generator.text(line,
+          styles: const PosStyles(
+              align: PosAlign.center, bold: true,
+              height: PosTextSize.size2, width: PosTextSize.size2));
+    }
     if (storeAddress.isNotEmpty) {
-      bytes += generator.text(storeAddress,
-          styles: const PosStyles(align: PosAlign.center));
+      for (final line in wrapReceiptText(storeAddress, paperSize: paperSize)) {
+        bytes += generator.text(line,
+            styles: const PosStyles(align: PosAlign.center));
+      }
     }
     if (storePhone.isNotEmpty) {
       bytes += generator.text('Telp: $storePhone',
@@ -1034,8 +1039,9 @@ class _CetakSheetState extends ConsumerState<_CetakSheet> {
     bytes += generator.hr();
 
     for (final item in _items) {
-      bytes += generator.text(item.productName,
-          styles: const PosStyles(bold: true));
+      for (final line in wrapReceiptText(item.productName, paperSize: paperSize)) {
+        bytes += generator.text(line, styles: const PosStyles(bold: true));
+      }
       bytes += generator.row([
         PosColumn(
             text: '  ${item.quantity} x ${CurrencyFormatter.format(item.price)}',
@@ -1060,8 +1066,10 @@ class _CetakSheetState extends ConsumerState<_CetakSheet> {
     bytes += generator.hr();
 
     if (storeNote.isNotEmpty) {
-      bytes += generator.text(storeNote,
-          styles: const PosStyles(align: PosAlign.center, bold: true));
+      for (final line in wrapReceiptText(storeNote, paperSize: paperSize)) {
+        bytes += generator.text(line,
+            styles: const PosStyles(align: PosAlign.center, bold: true));
+      }
     }
     bytes += generator.feed(3);
     bytes += generator.cut();
