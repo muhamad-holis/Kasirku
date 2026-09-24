@@ -1,0 +1,51 @@
+name: Quick Build (tanpa keystore)
+
+# Build cepat pakai debug signing (fallback bawaan di android/app/build.gradle
+# saat key.properties tidak ada) — tanpa perlu setup secrets/keystore sama
+# sekali. Cocok buat testing/sideload cepat, BUKAN untuk rilis ke Play Store.
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.24.5'
+          channel: 'stable'
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Generate launcher icons
+        run: dart run flutter_launcher_icons
+
+      - name: Generate code (Drift + Riverpod + Freezed)
+        run: dart run build_runner build --delete-conflicting-outputs
+
+      - name: Build APK (debug-signed, tanpa keystore custom)
+        run: flutter build apk --release
+
+      - name: Upload APK sebagai artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: kasirku-debug-signed-apk
+          path: build/app/outputs/flutter-apk/app-release.apk
+          retention-days: 30
