@@ -83,8 +83,8 @@ class ManualNotaPrinter {
           styles: const PosStyles(align: PosAlign.center));
     }
     bytes += generator.hr();
-    bytes += generator.text('NOTA MANUAL',
-        styles: const PosStyles(align: PosAlign.center, bold: true));
+    bytes += generator.text('Nota Belanja',
+        styles: const PosStyles(align: PosAlign.left, bold: true));
     bytes += generator.text('No: ${nota.invoiceNumber}',
         styles: const PosStyles(align: PosAlign.center));
     bytes += generator.text(dateStr, styles: const PosStyles(align: PosAlign.center));
