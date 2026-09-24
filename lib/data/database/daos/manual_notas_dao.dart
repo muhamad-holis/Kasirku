@@ -1,0 +1,50 @@
+part of '../app_database.dart';
+
+@DriftAccessor(tables: [ManualNotas])
+class ManualNotasDao extends DatabaseAccessor<AppDatabase>
+    with _$ManualNotasDaoMixin {
+  ManualNotasDao(super.db);
+
+  Future<List<ManualNota>> getAll({int limit = 100}) => (select(manualNotas)
+        ..orderBy([(t) => OrderingTerm.desc(t.createdAt)])
+        ..limit(limit))
+      .get();
+
+  Stream<List<ManualNota>> watchAll({int limit = 100}) => (select(manualNotas)
+        ..orderBy([(t) => OrderingTerm.desc(t.createdAt)])
+        ..limit(limit))
+      .watch();
+
+  Future<List<ManualNota>> getBetween(DateTime start, DateTime end) =>
+      (select(manualNotas)
+            ..where((t) => t.createdAt.isBiggerOrEqualValue(start) &
+                t.createdAt.isSmallerThanValue(end))
+            ..orderBy([(t) => OrderingTerm.desc(t.createdAt)]))
+          .get();
+
+  Future<ManualNota?> getById(int id) =>
+      (select(manualNotas)..where((t) => t.id.equals(id))).getSingleOrNull();
+
+  Future<int> insertNota(ManualNotasCompanion nota) =>
+      into(manualNotas).insert(nota);
+
+  Future<void> deleteNota(int id) =>
+      (delete(manualNotas)..where((t) => t.id.equals(id))).go();
+
+  /// Update sebagian kolom nota manual yang sudah ada (dipakai saat Edit dari
+  /// Riwayat Transaksi). invoiceNumber & createdAt sengaja TIDAK ikut diubah
+  /// di sini — pemanggil cukup kirim kolom yang berubah lewat [nota].
+  Future<int> updateNota(int id, ManualNotasCompanion nota) =>
+      (update(manualNotas)..where((t) => t.id.equals(id))).write(nota);
+
+  /// Nomor nota manual berikutnya, format NM000001, disimpan lewat
+  /// SettingsDao (key-value) agar tidak perlu tabel/kolom counter terpisah.
+  Future<String> nextInvoiceNumber() async {
+    const key = 'manual_nota_last_number';
+    final current =
+        int.tryParse(await attachedDatabase.settingsDao.getSetting(key) ?? '0') ?? 0;
+    final next = current + 1;
+    await attachedDatabase.settingsDao.setSetting(key, next.toString());
+    return 'NM${next.toString().padLeft(6, '0')}';
+  }
+}

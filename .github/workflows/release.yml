@@ -1,0 +1,204 @@
+name: Release KasirKu Pro - Signed APK & AAB
+
+on:
+  push:
+    tags: [ 'v*' ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+      # ── 1. Checkout ────────────────────────────────────────
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # ── 2. Auto-update version di pubspec.yaml dari git tag ─
+      - name: Update version dari git tag
+        run: |
+          TAG="${{ github.ref_name }}"        # contoh: v1.6.1
+          VERSION="${TAG#v}"                   # → 1.6.1
+          BUILD_NUM="${{ github.run_number }}" # auto-increment setiap run
+
+          sed -i "s/^version: .*/version: ${VERSION}+${BUILD_NUM}/" pubspec.yaml
+
+          echo "✅ Version set to: ${VERSION}+${BUILD_NUM}"
+          grep "^version:" pubspec.yaml
+
+      # ── 3. Java & Flutter ──────────────────────────────────
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.24.5'
+          channel: 'stable'
+          cache: true
+
+      # ── 4. Decode Keystore dari GitHub Secret ─────────────
+      - name: Setup Keystore
+        run: |
+          mkdir -p android/keystore
+
+          if [ -n "${{ secrets.KEYSTORE_BASE64 }}" ]; then
+            echo "Menggunakan keystore dari GitHub Secret (Base64)..."
+            echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > android/keystore/kasirkupro.keystore
+
+          elif [ -f "android/keystore/kasirkupro.keystore.enc" ]; then
+            echo "Mendekripsi keystore dari repo..."
+            openssl enc -d -aes-256-cbc \
+              -pbkdf2 \
+              -iter 100000 \
+              -in android/keystore/kasirkupro.keystore.enc \
+              -out android/keystore/kasirkupro.keystore \
+              -pass pass:"${{ secrets.KEYSTORE_ENC_PASSWORD }}"
+
+          else
+            echo "ERROR: Keystore tidak ditemukan!"
+            exit 1
+          fi
+
+          ls -lh android/keystore/kasirkupro.keystore
+
+      # ── 5. Buat key.properties ─────────────────────────────
+      - name: Create key.properties
+        run: |
+          printf 'storePassword=%s\n' '${{ secrets.KEYSTORE_STORE_PASSWORD }}' > android/key.properties
+          printf 'keyPassword=%s\n'   '${{ secrets.KEYSTORE_KEY_PASSWORD }}'   >> android/key.properties
+          printf 'keyAlias=%s\n'      '${{ secrets.KEYSTORE_KEY_ALIAS }}'      >> android/key.properties
+          printf 'storeFile=%s\n'     '../keystore/kasirkupro.keystore'         >> android/key.properties
+          echo "key.properties berhasil dibuat"
+          cat android/key.properties
+
+      # ── 6. local.properties ───────────────────────────────
+      - name: Create local.properties
+        run: |
+          FLUTTER_SDK=$(flutter --version --machine 2>/dev/null | python3 -c "import sys,json; print(json.load(sys.stdin).get('flutterRoot',''))" 2>/dev/null || dirname $(dirname $(which flutter)))
+          echo "flutter.sdk=$FLUTTER_SDK" > android/local.properties
+          echo "sdk.dir=$ANDROID_SDK_ROOT" >> android/local.properties
+
+      # ── 7. Build ──────────────────────────────────────────
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Generate launcher icons
+        run: dart run flutter_launcher_icons
+
+      - name: Generate code (Drift + Riverpod + Freezed)
+        run: dart run build_runner build --delete-conflicting-outputs
+
+      - name: Build Signed APK Release
+        run: flutter build apk --release
+
+      - name: Build Signed AAB Release
+        run: flutter build appbundle --release
+
+      # ── 8. Verifikasi Signature ────────────────────────────
+      - name: Verify APK Signature
+        run: |
+          echo "=== Verifikasi APK Signature ==="
+          jarsigner -verify -verbose -certs \
+            build/app/outputs/flutter-apk/app-release.apk \
+            | grep -E "(jar verified|signed by|SHA1|SHA256|Warning)" || true
+
+          echo "=== SHA-1 Certificate Fingerprint ==="
+          keytool -printcert \
+            -jarfile build/app/outputs/flutter-apk/app-release.apk \
+            | grep -E "(SHA1|SHA256|Owner|Issuer|Valid)" || true
+
+      # ── 9. Rename Output ──────────────────────────────────
+      - name: Rename output files
+        run: |
+          VERSION="${{ github.ref_name }}"
+          mv build/app/outputs/flutter-apk/app-release.apk \
+             build/app/outputs/flutter-apk/kasirkupro-${VERSION}-signed.apk
+          mv build/app/outputs/bundle/release/app-release.aab \
+             build/app/outputs/bundle/release/kasirkupro-${VERSION}-signed.aab
+
+      # ── 10. Upload ke GitHub Releases ──────────────────────
+      - name: Upload ke GitHub Releases
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            build/app/outputs/flutter-apk/kasirkupro-${{ github.ref_name }}-signed.apk
+            build/app/outputs/bundle/release/kasirkupro-${{ github.ref_name }}-signed.aab
+          name: "KasirKu Pro ${{ github.ref_name }}"
+          body: |
+            ## KasirKu Pro ${{ github.ref_name }}
+
+            ### File yang tersedia:
+            - **APK** (kasirkupro-${{ github.ref_name }}-signed.apk) - untuk sideload / testing
+            - **AAB** (kasirkupro-${{ github.ref_name }}-signed.aab) - untuk upload ke Play Store
+
+            ### Status Signing:
+            - Signed dengan keystore produksi (kasirkuPro)
+            - Package: com.kasirku.app
+            - Valid 25 tahun
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # ── 11. Upload APK ke Google Drive (nama fixed) ───────
+      - name: Install rclone
+        run: |
+          curl https://rclone.org/install.sh | sudo bash
+
+      - name: Setup rclone config
+        run: |
+          mkdir -p ~/.config/rclone
+          cat > ~/.config/rclone/rclone.conf << EOF
+          [kasirkupro_drive]
+          type = drive
+          client_id = ${{ secrets.RCLONE_CLIENT_ID }}
+          client_secret = ${{ secrets.RCLONE_CLIENT_SECRET }}
+          scope = drive
+          token = ${{ secrets.RCLONE_TOKEN }}
+          EOF
+
+      - name: Copy APK dengan nama fixed untuk landing page
+        run: |
+          cp build/app/outputs/flutter-apk/kasirkupro-${{ github.ref_name }}-signed.apk \
+             build/app/outputs/flutter-apk/KasirkuPro-latest.apk
+
+      - name: Upload APK ke Google Drive
+        run: |
+          # Upload APK
+          rclone copy build/app/outputs/flutter-apk/KasirkuPro-latest.apk \
+            kasirkupro_drive:KasirkuPro-Release \
+            --drive-use-trash=false \
+            -v
+
+          # Buat dan upload version.json
+          # App membaca file ini untuk cek versi terbaru
+          VERSION="${{ github.ref_name }}"
+          VERSION_NUMBER="${VERSION#v}"  # hapus prefix "v"
+          cat > /tmp/version.json << EOF
+          {
+            "version": "$VERSION_NUMBER",
+            "tag": "$VERSION",
+            "apk_file_id": "1aCYrsoJI5RoVWzo75A5vASagmH14GP9W",
+            "updated_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          }
+          EOF
+
+          rclone copy /tmp/version.json \
+            kasirkupro_drive:KasirkuPro-Release \
+            --drive-use-trash=false \
+            -v
+
+          echo "✅ APK dan version.json berhasil diupload ke Google Drive!"
+
+      # ── 12. Cleanup ───────────────────────────────────────
+      - name: Cleanup sensitive files
+        if: always()
+        run: |
+          rm -f android/keystore/kasirkupro.keystore
+          rm -f android/key.properties
+          echo "File sensitif telah dihapus dari runner"
