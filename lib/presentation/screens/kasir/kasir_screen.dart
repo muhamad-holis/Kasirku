@@ -8,6 +8,7 @@ import 'dart:io';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:print_bluetooth_thermal/print_bluetooth_thermal.dart';
+import '../../../core/utils/bluetooth_permission.dart';
 import 'package:esc_pos_utils_plus/esc_pos_utils_plus.dart';
 import 'package:image/image.dart' as img;
 import 'package:intl/intl.dart';
@@ -3067,6 +3068,16 @@ class _SuccessDialogState extends ConsumerState<_SuccessDialog> {
   }
 
   Future<void> _showBluetoothPrinterDialog() async {
+    final granted = await ensureBluetoothPermission();
+    if (!context.mounted) return;
+    if (!granted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Izin Bluetooth ditolak. Aktifkan lewat Pengaturan '
+              'HP > Aplikasi > KasirKu Pro > Izin.'),
+          backgroundColor: AppColors.danger));
+      return;
+    }
     final List<dynamic> devices =
         await PrintBluetoothThermal.pairedBluetooths;
 

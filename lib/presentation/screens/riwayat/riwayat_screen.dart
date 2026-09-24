@@ -21,6 +21,7 @@ import '../../providers/manual_nota_provider.dart';
 import '../../../core/utils/manual_nota_printer.dart';
 import '../kasir/manual_nota_screen.dart';
 import '../../../data/database/app_database.dart';
+import '../../../core/utils/bluetooth_permission.dart';
 
 /// Warna khas untuk membedakan entri "Nota Manual" dari transaksi kasir
 /// otomatis di daftar Riwayat (lihat _RiwayatEntry).
@@ -924,6 +925,15 @@ class _CetakSheetState extends ConsumerState<_CetakSheet> {
   }
 
   Future<void> _showPrinterDialog() async {
+    final granted = await ensureBluetoothPermission();
+    if (!context.mounted) return;
+    if (!granted) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Izin Bluetooth ditolak. Aktifkan lewat Pengaturan '
+              'HP > Aplikasi > KasirKu Pro > Izin.'),
+          backgroundColor: AppColors.danger));
+      return;
+    }
     final devices = await PrintBluetoothThermal.pairedBluetooths;
     if (!context.mounted) return;
     if (devices.isEmpty) {
@@ -1258,6 +1268,15 @@ class _ManualNotaSheetState extends ConsumerState<_ManualNotaSheet> {
   }
 
   Future<void> _showPrinterDialog() async {
+    final granted = await ensureBluetoothPermission();
+    if (!context.mounted) return;
+    if (!granted) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Izin Bluetooth ditolak. Aktifkan lewat Pengaturan '
+              'HP > Aplikasi > KasirKu Pro > Izin.'),
+          backgroundColor: AppColors.danger));
+      return;
+    }
     final devices = await PrintBluetoothThermal.pairedBluetooths;
     if (!context.mounted) return;
     if (devices.isEmpty) {

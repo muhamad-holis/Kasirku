@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'dart:typed_data';
+import '../../../core/utils/bluetooth_permission.dart';
 import 'package:flutter/material.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:flutter/services.dart';
@@ -1905,6 +1906,17 @@ class _BluetoothScanSheetState
 
   Future<void> _scanDevices() async {
     setState(() { _scanning = true; _error = null; });
+    final granted = await ensureBluetoothPermission();
+    if (!granted) {
+      if (mounted) {
+        setState(() {
+          _error = 'Izin Bluetooth ditolak. Aktifkan izin Bluetooth untuk '
+              'aplikasi ini lewat Pengaturan HP > Aplikasi > KasirKu Pro > Izin.';
+          _scanning = false;
+        });
+      }
+      return;
+    }
     try {
       final List<dynamic> paired =
           await PrintBluetoothThermal.pairedBluetooths;
