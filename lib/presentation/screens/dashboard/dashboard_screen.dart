@@ -16,6 +16,12 @@ import '../settings/settings_screen.dart';
 import '../riwayat/riwayat_screen.dart';
 import '../kasir_management/kasir_management_screen.dart';
 import '../login/login_screen.dart';
+import '../../models/riwayat_entry.dart';
+import '../../providers/manual_nota_provider.dart';
+
+/// Warna khas nota manual — sama seperti di Riwayat Transaksi supaya
+/// konsisten secara visual di seluruh app.
+const _manualColor = Color(0xFF8B5CF6);
 
 // ─── Helpers warna tema ───────────────────────────────────────────────────────
 
@@ -54,30 +60,45 @@ final dashboardStatsProvider = StreamProvider<DashboardStats>((ref) async* {
   final db  = ref.watch(databaseProvider);
   final now = DateTime.now();
   final startOfToday     = DateTime(now.year, now.month, now.day);
-  final endOfToday       = startOfToday.add(const Duration(days: 1));
   final startOfYesterday = startOfToday.subtract(const Duration(days: 1));
 
-  final todayStream = db.transactionsDao.watchTodayTransactions();
+  final combinedTodayStream = combineRiwayat(
+    db.transactionsDao.watchTodayTransactions(),
+    db.manualNotasDao.watchToday(),
+  );
 
-  await for (final todayTx in todayStream) {
+  await for (final todayEntries in combinedTodayStream) {
     final yesterdayTx = await db.transactionsDao
         .getTransactionsByDate(startOfYesterday, startOfToday);
+    final yesterdayNota = await db.manualNotasDao
+        .getBetween(startOfYesterday, startOfToday);
 
-    final omzetToday     = todayTx.fold<double>(0, (sum, t) => sum + t.total);
-    final omzetYesterday = yesterdayTx.fold<double>(0, (sum, t) => sum + t.total);
+    final omzetToday = todayEntries.fold<double>(0, (sum, e) => sum + e.total);
+    final omzetYesterday = yesterdayTx.fold<double>(0, (sum, t) => sum + t.total) +
+        yesterdayNota.fold<double>(0, (sum, n) => sum + n.total);
 
     double pctChange(double today, double yesterday) {
       if (yesterday == 0) return today > 0 ? 100.0 : 0.0;
       return ((today - yesterday) / yesterday) * 100;
     }
 
-    final txToday      = todayTx.length;
-    final txYesterday  = yesterdayTx.length;
+    final txToday      = todayEntries.length;
+    final txYesterday  = yesterdayTx.length + yesterdayNota.length;
     final avgToday     = txToday > 0 ? omzetToday / txToday : 0.0;
     final avgYesterday = txYesterday > 0 ? omzetYesterday / txYesterday : 0.0;
 
-    final productsSold = await db.transactionsDao
-        .getTotalProductsSold(todayTx.map((t) => t.id).toList());
+    final todayTxIds = todayEntries
+        .where((e) => e.kind == RiwayatKind.transaksi)
+        .map((e) => e.tx!.id)
+        .toList();
+    final productsSold = await db.transactionsDao.getTotalProductsSold(todayTxIds);
+    // Item nota manual (ketik bebas, tidak lewat transactionItems) ikut
+    // dihitung supaya "Produk Terjual" mencerminkan seluruh penjualan.
+    final manualQtySold = todayEntries
+        .where((e) => e.kind == RiwayatKind.manual)
+        .fold<int>(0, (sum, e) => sum +
+            decodeManualNotaItems(e.nota!.itemsJson)
+                .fold<int>(0, (s2, i) => s2 + i.qty));
 
     yield DashboardStats(
       omzetToday:   omzetToday,
@@ -86,7 +107,7 @@ final dashboardStatsProvider = StreamProvider<DashboardStats>((ref) async* {
       txChange:     pctChange(txToday.toDouble(), txYesterday.toDouble()),
       avgToday:     avgToday,
       avgChange:    pctChange(avgToday, avgYesterday),
-      productsSold: productsSold,
+      productsSold: productsSold + manualQtySold,
     );
   }
 });
@@ -983,15 +1004,15 @@ class _LowStockBanner extends StatelessWidget {
 // ─── Transaction List ─────────────────────────────────────────────────────────
 
 class _TxList extends ConsumerWidget {
-  final List<Transaction> transactions;
+  final List<RiwayatEntry> transactions;
   const _TxList({required this.transactions});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     return Column(
-      children: transactions.map((tx) => GestureDetector(
-        onTap: () => _showDetail(context, ref, tx),
+      children: transactions.map((entry) => GestureDetector(
+        onTap: () => _showDetail(context, ref, entry),
         child: Container(
           margin: const EdgeInsets.only(bottom: 8),
           padding: const EdgeInsets.all(14),
@@ -1004,27 +1025,35 @@ class _TxList extends ConsumerWidget {
             Container(
               padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
-                color: _priLight(isDark),
+                color: entry.kind == RiwayatKind.manual
+                    ? _manualColor.withOpacity(0.1)
+                    : _priLight(isDark),
                 borderRadius: BorderRadius.circular(12),
               ),
-              child: const Icon(Icons.shopping_bag_outlined,
-                  color: AppColors.primary, size: 20),
+              child: Icon(
+                  entry.kind == RiwayatKind.manual
+                      ? Icons.edit_note_outlined
+                      : Icons.shopping_bag_outlined,
+                  color: entry.kind == RiwayatKind.manual
+                      ? _manualColor
+                      : AppColors.primary,
+                  size: 20),
             ),
             const SizedBox(width: 12),
             Expanded(
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text(tx.invoiceNumber,
+                Text(entry.invoiceNumber,
                     style: TextStyle(
                       fontWeight: FontWeight.w700, fontSize: 13,
                       color: _textPrimary(isDark),
                     )),
                 const SizedBox(height: 2),
-                Text(_formatDate(tx.createdAt),
+                Text(_formatDate(entry.createdAt),
                     style: TextStyle(fontSize: 11, color: _textSub(isDark))),
               ]),
             ),
             Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
-              Text(CurrencyFormatter.format(tx.total),
+              Text(CurrencyFormatter.format(entry.total),
                   style: TextStyle(
                     fontWeight: FontWeight.w700, fontSize: 14,
                     color: _textPrimary(isDark),
@@ -1033,12 +1062,21 @@ class _TxList extends ConsumerWidget {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                 decoration: BoxDecoration(
-                  color: AppColors.success.withOpacity(0.1),
+                  color: (entry.kind == RiwayatKind.manual
+                          ? _manualColor
+                          : AppColors.success)
+                      .withOpacity(0.1),
                   borderRadius: BorderRadius.circular(20),
                 ),
-                child: Text(_methodLabel(tx.paymentMethod),
-                    style: const TextStyle(
-                      fontSize: 10, color: AppColors.success,
+                child: Text(
+                    entry.kind == RiwayatKind.manual
+                        ? 'Manual'
+                        : _methodLabel(entry.tx!.paymentMethod),
+                    style: TextStyle(
+                      fontSize: 10,
+                      color: entry.kind == RiwayatKind.manual
+                          ? _manualColor
+                          : AppColors.success,
                       fontWeight: FontWeight.w600,
                     )),
               ),
@@ -1049,7 +1087,7 @@ class _TxList extends ConsumerWidget {
     );
   }
 
-  void _showDetail(BuildContext context, WidgetRef ref, Transaction tx) {
+  void _showDetail(BuildContext context, WidgetRef ref, RiwayatEntry entry) {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -1057,7 +1095,9 @@ class _TxList extends ConsumerWidget {
           borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
       builder: (_) => ProviderScope(
         parent: ProviderScope.containerOf(context),
-        child: _TxDetailSheet(transaction: tx),
+        child: entry.kind == RiwayatKind.transaksi
+            ? _TxDetailSheet(transaction: entry.tx!)
+            : _ManualNotaQuickDetail(nota: entry.nota!),
       ),
     );
   }
@@ -1217,6 +1257,131 @@ class _TxDetailSheet extends ConsumerWidget {
       case 'hutang':   return 'Hutang';
       default:         return 'Selesai';
     }
+  }
+
+  String _formatDate(DateTime dt) {
+    const months = ['Jan','Feb','Mar','Apr','Mei','Jun',
+                    'Jul','Ags','Sep','Okt','Nov','Des'];
+    return '${dt.day} ${months[dt.month - 1]} ${dt.year} • '
+        '${dt.hour.toString().padLeft(2,'0')}:'
+        '${dt.minute.toString().padLeft(2,'0')}';
+  }
+}
+
+/// Detail ringkas (read-only) nota manual saat di-tap dari Dashboard.
+/// Untuk edit/hapus/cetak-ulang, arahkan ke tab Riwayat (aksi lengkap ada
+/// di sana) — di sini cukup untuk lihat cepat.
+class _ManualNotaQuickDetail extends ConsumerWidget {
+  final ManualNota nota;
+  const _ManualNotaQuickDetail({required this.nota});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final isDark      = Theme.of(context).brightness == Brightness.dark;
+    final handleColor = isDark ? AppColors.darkBorder : Colors.grey.shade300;
+    final items       = decodeManualNotaItems(nota.itemsJson);
+
+    return DraggableScrollableSheet(
+      expand: false,
+      initialChildSize: 0.5,
+      maxChildSize: 0.8,
+      builder: (_, controller) => Column(children: [
+        Container(
+          margin: const EdgeInsets.only(top: 12, bottom: 8),
+          width: 40, height: 4,
+          decoration: BoxDecoration(
+            color: handleColor, borderRadius: BorderRadius.circular(2)),
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text(nota.invoiceNumber,
+                    style: TextStyle(
+                      fontSize: 16, fontWeight: FontWeight.w800,
+                      color: _textPrimary(isDark),
+                    )),
+                Text(_formatDate(nota.createdAt),
+                    style: TextStyle(fontSize: 12, color: _textSub(isDark))),
+              ]),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: _manualColor.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: const Text('Manual',
+                    style: TextStyle(
+                      fontSize: 12, color: _manualColor,
+                      fontWeight: FontWeight.w700,
+                    )),
+              ),
+            ],
+          ),
+        ),
+        const Divider(height: 1),
+        Expanded(
+          child: ListView(
+            controller: controller,
+            padding: const EdgeInsets.all(20),
+            children: [
+              if ((nota.customerName ?? '').isNotEmpty) ...[
+                _SummaryRow('Pelanggan', nota.customerName!),
+                const SizedBox(height: 8),
+              ],
+              Text('Item',
+                  style: TextStyle(
+                    fontSize: 13, fontWeight: FontWeight.w700,
+                    color: _textSub(isDark),
+                  )),
+              const SizedBox(height: 8),
+              ...items.map((item) => Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 4),
+                    child: Row(children: [
+                      Expanded(
+                          child: Text(item.name,
+                              style: TextStyle(
+                                  fontSize: 13, color: _textPrimary(isDark)))),
+                      Text('${item.qty}x ',
+                          style: TextStyle(fontSize: 12, color: _textSub(isDark))),
+                      Text(CurrencyFormatter.format(item.total),
+                          style: TextStyle(
+                              fontSize: 13, fontWeight: FontWeight.w600,
+                              color: _textPrimary(isDark))),
+                    ]),
+                  )),
+              const Divider(height: 24),
+              _SummaryRow('Total', CurrencyFormatter.format(nota.total),
+                  bold: true, color: _manualColor),
+              if (nota.amountPaid != null)
+                _SummaryRow('Dibayar', CurrencyFormatter.format(nota.amountPaid!)),
+              const SizedBox(height: 16),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  icon: const Icon(Icons.receipt_long_outlined, size: 18),
+                  label: const Text('Kelola di Riwayat'),
+                  onPressed: () {
+                    Navigator.pop(context);
+                    ref.read(currentNavIndexProvider.notifier).state = 1;
+                  },
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: _manualColor,
+                    side: const BorderSide(color: _manualColor),
+                    padding: const EdgeInsets.symmetric(vertical: 13),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10)),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 20),
+            ],
+          ),
+        ),
+      ]),
+    );
   }
 
   String _formatDate(DateTime dt) {

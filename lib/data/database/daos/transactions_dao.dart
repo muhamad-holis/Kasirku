@@ -94,6 +94,17 @@ class TransactionsDao extends DatabaseAccessor<AppDatabase>
         ..orderBy([(t) => OrderingTerm.desc(t.createdAt)]))
           .get();
 
+  /// Versi reaktif dari [getTransactionsByDate] — dipakai di Riwayat
+  /// Transaksi supaya daftar update otomatis begitu ada transaksi baru,
+  /// tanpa perlu keluar-masuk tab (sebelumnya pakai FutureProvider yang
+  /// cuma fetch sekali dan terasa "lambat sync").
+  Stream<List<Transaction>> watchTransactionsByDate(
+      DateTime start, DateTime end) =>
+      (select(transactions)
+        ..where((t) => t.createdAt.isBetweenValues(start, end))
+        ..orderBy([(t) => OrderingTerm.desc(t.createdAt)]))
+          .watch();
+
   /// Riwayat transaksi per pelanggan
   Future<List<Transaction>> getTransactionsByCustomer(int customerId) =>
       (select(transactions)

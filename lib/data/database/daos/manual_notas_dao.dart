@@ -28,6 +28,41 @@ class ManualNotasDao extends DatabaseAccessor<AppDatabase>
   Future<int> insertNota(ManualNotasCompanion nota) =>
       into(manualNotas).insert(nota);
 
+  /// Versi reaktif dari [getBetween] — dipakai di Riwayat Transaksi supaya
+  /// nota manual baru langsung muncul tanpa perlu keluar-masuk tab lagi.
+  Stream<List<ManualNota>> watchBetween(DateTime start, DateTime end) =>
+      (select(manualNotas)
+        ..where((t) => t.createdAt.isBetweenValues(start, end))
+        ..orderBy([(t) => OrderingTerm.desc(t.createdAt)]))
+          .watch();
+
+  /// Versi reaktif "hari ini" untuk Dashboard — pola sama seperti
+  /// TransactionsDao.watchTodayTransactions (loop ulang tiap tengah malam).
+  Stream<List<ManualNota>> watchToday() async* {
+    while (true) {
+      final now = DateTime.now();
+      final start = DateTime(now.year, now.month, now.day);
+      final end = start.add(const Duration(days: 1));
+      final secondsUntilMidnight = end.difference(now).inSeconds + 1;
+
+      bool timedOut = false;
+      await for (final notaList in (select(manualNotas)
+            ..where((t) => t.createdAt.isBetweenValues(start, end))
+            ..orderBy([(t) => OrderingTerm.desc(t.createdAt)]))
+          .watch()
+          .timeout(
+            Duration(seconds: secondsUntilMidnight),
+            onTimeout: (sink) {
+              timedOut = true;
+              sink.close();
+            },
+          )) {
+        yield notaList;
+      }
+      if (!timedOut) break;
+    }
+  }
+
   Future<void> deleteNota(int id) =>
       (delete(manualNotas)..where((t) => t.id.equals(id))).go();
 

@@ -23,9 +23,10 @@ import '../kasir/manual_nota_screen.dart';
 import '../../../data/database/app_database.dart';
 import '../../../core/utils/bluetooth_permission.dart';
 import '../../../core/utils/receipt_text_wrap.dart';
+import '../../models/riwayat_entry.dart';
 
 /// Warna khas untuk membedakan entri "Nota Manual" dari transaksi kasir
-/// otomatis di daftar Riwayat (lihat _RiwayatEntry).
+/// otomatis di daftar Riwayat (lihat RiwayatEntry).
 const _manualColor = Color(0xFF8B5CF6);
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -44,48 +45,18 @@ final _riwayatEndProvider = StateProvider<DateTime>((ref) {
 
 final _riwayatSearchProvider = StateProvider<String>((ref) => '');
 
-/// Jenis entri di daftar Riwayat gabungan — transaksi Kasir Otomatis
-/// (tabel `transactions`) atau Nota Manual (tabel `manual_notas`).
-enum _RiwayatKind { transaksi, manual }
-
-/// Wrapper supaya Transaction & ManualNota bisa ditampilkan dalam satu
-/// daftar/urutan waktu yang sama tanpa mengubah dua model Drift tersebut.
-class _RiwayatEntry {
-  final _RiwayatKind kind;
-  final DateTime createdAt;
-  final String invoiceNumber;
-  final double total;
-  final Transaction? tx;
-  final ManualNota? nota;
-
-  _RiwayatEntry.transaksi(Transaction t)
-      : kind = _RiwayatKind.transaksi,
-        createdAt = t.createdAt,
-        invoiceNumber = t.invoiceNumber,
-        total = t.total,
-        tx = t,
-        nota = null;
-
-  _RiwayatEntry.manual(ManualNota n)
-      : kind = _RiwayatKind.manual,
-        createdAt = n.createdAt,
-        invoiceNumber = n.invoiceNumber,
-        total = n.total,
-        tx = null,
-        nota = n;
-}
-
-final _riwayatListProvider = FutureProvider.autoDispose<List<_RiwayatEntry>>((ref) async {
+/// Daftar riwayat gabungan (transaksi + nota manual) yang REAKTIF — otomatis
+/// ter-update tiap kali ada transaksi/nota baru tersimpan, tanpa perlu
+/// keluar-masuk tab Riwayat lagi (sebelumnya FutureProvider yang cuma fetch
+/// sekali dan terasa "lambat sync").
+final _riwayatListProvider = StreamProvider.autoDispose<List<RiwayatEntry>>((ref) {
   final db    = ref.watch(databaseProvider);
   final start = ref.watch(_riwayatStartProvider);
   final end   = ref.watch(_riwayatEndProvider);
-  final txList   = await db.transactionsDao.getTransactionsByDate(start, end);
-  final notaList = await db.manualNotasDao.getBetween(start, end);
-  final entries = <_RiwayatEntry>[
-    ...txList.map((t) => _RiwayatEntry.transaksi(t)),
-    ...notaList.map((n) => _RiwayatEntry.manual(n)),
-  ]..sort((a, b) => b.createdAt.compareTo(a.createdAt));
-  return entries;
+  return combineRiwayat(
+    db.transactionsDao.watchTransactionsByDate(start, end),
+    db.manualNotasDao.watchBetween(start, end),
+  );
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -228,7 +199,7 @@ class _RiwayatScreenState extends ConsumerState<RiwayatScreen> {
                     : list.where((e) =>
                         e.invoiceNumber.toLowerCase().contains(query) ||
                         (e.tx?.paymentMethod.toLowerCase().contains(query) ?? false) ||
-                        (e.kind == _RiwayatKind.manual && 'manual'.contains(query))).toList();
+                        (e.kind == RiwayatKind.manual && 'manual'.contains(query))).toList();
 
                 if (filtered.isEmpty) {
                   return _EmptyState(isSearching: query.isNotEmpty);
@@ -272,14 +243,14 @@ class _RiwayatScreenState extends ConsumerState<RiwayatScreen> {
     );
   }
 
-  void _showCetakSheet(BuildContext context, _RiwayatEntry entry) {
+  void _showCetakSheet(BuildContext context, RiwayatEntry entry) {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (_) => ProviderScope(
         parent: ProviderScope.containerOf(context),
-        child: entry.kind == _RiwayatKind.transaksi
+        child: entry.kind == RiwayatKind.transaksi
             ? _CetakSheet(tx: entry.tx!)
             : _ManualNotaSheet(nota: entry.nota!),
       ),
@@ -358,7 +329,7 @@ class _DisplayItem {
 }
 
 class _TrxCard extends ConsumerStatefulWidget {
-  final _RiwayatEntry entry;
+  final RiwayatEntry entry;
   final VoidCallback onCetak;
 
   const _TrxCard({required this.entry, required this.onCetak});
@@ -375,7 +346,7 @@ class _TrxCardState extends ConsumerState<_TrxCard> {
   Future<void> _loadItems() async {
     if (_items != null) return;
     setState(() => _loadingItems = true);
-    if (widget.entry.kind == _RiwayatKind.transaksi) {
+    if (widget.entry.kind == RiwayatKind.transaksi) {
       final db = ref.read(databaseProvider);
       final items = await db.transactionsDao.getTransactionItems(widget.entry.tx!.id);
       if (mounted) {
@@ -400,7 +371,7 @@ class _TrxCardState extends ConsumerState<_TrxCard> {
   }
 
   String _methodLabel() {
-    if (widget.entry.kind == _RiwayatKind.manual) return 'Manual';
+    if (widget.entry.kind == RiwayatKind.manual) return 'Manual';
     switch (widget.entry.tx!.paymentMethod) {
       case 'tunai':    return 'Tunai';
       case 'qris':     return 'QRIS';
@@ -411,7 +382,7 @@ class _TrxCardState extends ConsumerState<_TrxCard> {
   }
 
   Color _methodColor() {
-    if (widget.entry.kind == _RiwayatKind.manual) return _manualColor;
+    if (widget.entry.kind == RiwayatKind.manual) return _manualColor;
     switch (widget.entry.tx!.paymentMethod) {
       case 'tunai':    return AppColors.success;
       case 'qris':     return AppColors.primary;
@@ -462,18 +433,18 @@ class _TrxCardState extends ConsumerState<_TrxCard> {
                     width: 40,
                     height: 40,
                     decoration: BoxDecoration(
-                      color: (widget.entry.kind == _RiwayatKind.manual
+                      color: (widget.entry.kind == RiwayatKind.manual
                               ? _manualColor
                               : AppColors.primary)
                           .withOpacity(0.1),
                       borderRadius: BorderRadius.circular(10),
                     ),
                     child: Icon(
-                        widget.entry.kind == _RiwayatKind.manual
+                        widget.entry.kind == RiwayatKind.manual
                             ? Icons.edit_note_outlined
                             : Icons.receipt_long_outlined,
                         size: 20,
-                        color: widget.entry.kind == _RiwayatKind.manual
+                        color: widget.entry.kind == RiwayatKind.manual
                             ? _manualColor
                             : AppColors.primary),
                   ),
@@ -628,11 +599,11 @@ class _TrxCardState extends ConsumerState<_TrxCard> {
                 width: double.infinity,
                 child: OutlinedButton.icon(
                   icon: Icon(
-                      widget.entry.kind == _RiwayatKind.manual
+                      widget.entry.kind == RiwayatKind.manual
                           ? Icons.more_horiz_rounded
                           : Icons.print_outlined,
                       size: 18),
-                  label: Text(widget.entry.kind == _RiwayatKind.manual
+                  label: Text(widget.entry.kind == RiwayatKind.manual
                       ? 'Detail / Kelola Nota'
                       : 'Cetak Ulang Struk'),
                   onPressed: widget.onCetak,
