@@ -192,6 +192,7 @@ class KasirNotifier extends StateNotifier<KasirState> {
           categoryId: freshProduct?.categoryId ?? 0,
           buyPrice: freshProduct?.buyPrice ?? 0,
           isActive: freshProduct?.isActive ?? true,
+          isUnlimitedStock: freshProduct?.isUnlimitedStock ?? false,
           createdAt: freshProduct?.createdAt ?? DateTime.now(),
           updatedAt: freshProduct?.updatedAt ?? DateTime.now(),
         );
