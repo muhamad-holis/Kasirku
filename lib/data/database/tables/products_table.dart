@@ -16,6 +16,10 @@ class Products extends Table {
   IntColumn get minStock => integer().withDefault(const Constant(5))();
   TextColumn get imagePath => text().nullable()();
   BoolColumn get isActive => boolean().withDefault(const Constant(true))();
+  // Produk yang lahir dari pencatatan Nota Manual (ketik bebas nama+harga)
+  // otomatis masuk ke sini dengan stok unlimited — tidak perlu diisi/dikurangi
+  // manual, dan dikecualikan dari peringatan "stok menipis".
+  BoolColumn get isUnlimitedStock => boolean().withDefault(const Constant(false))();
   DateTimeColumn get createdAt => dateTime().withDefault(currentDateAndTime)();
   DateTimeColumn get updatedAt => dateTime().withDefault(currentDateAndTime)();
 }

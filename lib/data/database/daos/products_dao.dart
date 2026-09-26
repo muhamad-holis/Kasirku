@@ -27,7 +27,9 @@ class ProductsDao extends DatabaseAccessor<AppDatabase>
       (select(products)
         ..where((t) => t.isActive.equals(true)))
           .get()
-          .then((list) => list.where((p) => p.stock < p.minStock).toList());
+          .then((list) => list
+              .where((p) => !p.isUnlimitedStock && p.stock < p.minStock)
+              .toList());
 
   Future<Product?> getProductByName(String name) =>
       (select(products)
@@ -40,6 +42,36 @@ class ProductsDao extends DatabaseAccessor<AppDatabase>
         ..where((t) => t.name.like('%${name.toLowerCase()}%'))
         ..where((t) => t.isActive.equals(true)))
           .get();
+
+  /// Upsert produk dari pencatatan Nota Manual: kalau nama barang sudah ada
+  /// (cocok persis, tanpa peduli huruf besar/kecil) → update harga jualnya
+  /// ke harga terbaru; kalau belum ada → buat produk baru dengan stok
+  /// unlimited (tidak perlu diisi/dikurangi manual). Dipakai juga untuk
+  /// sumber data autocomplete nama+harga saat mengetik nota berikutnya, dan
+  /// untuk menu Cetak Label.
+  Future<void> upsertFromManualNota({
+    required String name,
+    required double price,
+  }) async {
+    final trimmed = name.trim();
+    if (trimmed.isEmpty) return;
+    final existing = await getProductByName(trimmed);
+    if (existing != null) {
+      await (update(products)..where((t) => t.id.equals(existing.id))).write(
+        ProductsCompanion(
+          sellPrice: Value(price),
+          updatedAt: Value(DateTime.now()),
+        ),
+      );
+    } else {
+      await into(products).insert(ProductsCompanion.insert(
+        name: trimmed,
+        sellPrice: Value(price),
+        isUnlimitedStock: const Value(true),
+        stock: const Value(0),
+      ));
+    }
+  }
 
   Future<int> insertProduct(ProductsCompanion product) =>
       into(products).insert(product);
@@ -68,7 +100,9 @@ class ProductsDao extends DatabaseAccessor<AppDatabase>
       (select(products)
         ..where((t) => t.isActive.equals(true)))
           .watch()
-          .map((list) => list.where((p) => p.stock < p.minStock).toList());
+          .map((list) => list
+              .where((p) => !p.isUnlimitedStock && p.stock < p.minStock)
+              .toList());
 
   Future<Product?> getProductById(int id) =>
       (select(products)..where((t) => t.id.equals(id))).getSingleOrNull();

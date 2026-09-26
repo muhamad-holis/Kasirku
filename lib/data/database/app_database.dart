@@ -20,6 +20,7 @@ part 'tables/users_table.dart';
 part 'tables/audit_logs_table.dart';
 part 'tables/suppliers_table.dart';
 part 'tables/manual_notas_table.dart';
+part 'tables/print_label_histories_table.dart';
 
 part 'daos/products_dao.dart';
 part 'daos/categories_dao.dart';
@@ -33,6 +34,7 @@ part 'daos/settings_dao.dart';
 part 'daos/users_dao.dart';
 part 'daos/suppliers_dao.dart';
 part 'daos/manual_notas_dao.dart';
+part 'daos/print_label_histories_dao.dart';
 
 part 'app_database.g.dart';
 
@@ -49,20 +51,20 @@ LazyDatabase _openConnection() {
     Categories, Products, Customers, Transactions,
     TransactionItems, Debts, StockMovements,
     CashFlows, Settings, SyncQueue, Users, AuditLogs,
-    Suppliers, ManualNotas,
+    Suppliers, ManualNotas, PrintLabelHistories,
   ],
   daos: [
     ProductsDao, CategoriesDao, TransactionsDao,
     CustomersDao, DebtsDao, ReportsDao, SyncDao,
     StockMovementsDao, SettingsDao, UsersDao,
-    SuppliersDao, ManualNotasDao,
+    SuppliersDao, ManualNotasDao, PrintLabelHistoriesDao,
   ],
 )
 class AppDatabase extends _$AppDatabase {
   AppDatabase() : super(_openConnection());
 
   @override
-  int get schemaVersion => 8;
+  int get schemaVersion => 9;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -187,6 +189,24 @@ class AppDatabase extends _$AppDatabase {
           "is_synced INTEGER NOT NULL DEFAULT 0,"
           "created_at INTEGER NOT NULL DEFAULT (strftime('%s','now') * 1000),"
           "updated_at INTEGER NOT NULL DEFAULT (strftime('%s','now') * 1000)"
+          ")"
+        );
+      }
+      if (from < 9) {
+        // Fitur unlimited stock (produk dari Nota Manual) + menu Cetak Label.
+        try {
+          await customStatement(
+            "ALTER TABLE products ADD COLUMN is_unlimited_stock INTEGER NOT NULL DEFAULT 0"
+          );
+        } catch (_) {}
+        await customStatement(
+          "CREATE TABLE IF NOT EXISTS print_label_histories ("
+          "id INTEGER PRIMARY KEY AUTOINCREMENT,"
+          "product_name TEXT NOT NULL,"
+          "unit TEXT NOT NULL,"
+          "price REAL NOT NULL,"
+          "quantity INTEGER NOT NULL,"
+          "printed_at INTEGER NOT NULL DEFAULT (strftime('%s','now') * 1000)"
           ")"
         );
       }

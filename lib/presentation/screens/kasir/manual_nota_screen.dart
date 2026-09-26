@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/theme/app_theme.dart';
@@ -5,6 +6,7 @@ import '../../../core/utils/currency.dart';
 import '../../../core/utils/manual_nota_printer.dart';
 import '../../providers/manual_nota_provider.dart';
 import '../../providers/settings_provider.dart';
+import '../../providers/database_provider.dart';
 import '../../../data/database/app_database.dart';
 
 /// Layar "Nota Manual" — nota tulis-tangan cepat, alternatif dari Kasir
@@ -276,7 +278,7 @@ class _ManualNotaScreenState extends ConsumerState<ManualNotaScreen> {
   }
 }
 
-class _ManualNotaRow extends StatefulWidget {
+class _ManualNotaRow extends ConsumerStatefulWidget {
   final ManualNotaItem item;
   final FocusNode nameFocusNode;
   final void Function(String? name, double? price, int? qty) onChanged;
@@ -293,15 +295,19 @@ class _ManualNotaRow extends StatefulWidget {
   });
 
   @override
-  State<_ManualNotaRow> createState() => _ManualNotaRowState();
+  ConsumerState<_ManualNotaRow> createState() => _ManualNotaRowState();
 }
 
-class _ManualNotaRowState extends State<_ManualNotaRow> {
+class _ManualNotaRowState extends ConsumerState<_ManualNotaRow> {
   late final TextEditingController _nameCtrl;
   late final TextEditingController _priceCtrl;
   late final TextEditingController _qtyCtrl;
   final FocusNode _priceFocus = FocusNode();
   final FocusNode _qtyFocus = FocusNode();
+
+  Timer? _debounce;
+  List<Product> _suggestions = [];
+  bool _showSuggestions = false;
 
   @override
   void initState() {
@@ -309,10 +315,55 @@ class _ManualNotaRowState extends State<_ManualNotaRow> {
     _nameCtrl = TextEditingController(text: widget.item.name);
     _priceCtrl = TextEditingController(text: widget.item.price == 0 ? '' : widget.item.price.toStringAsFixed(0));
     _qtyCtrl = TextEditingController(text: widget.item.qty.toString());
+    widget.nameFocusNode.addListener(_onNameFocusChange);
+  }
+
+  void _onNameFocusChange() {
+    if (!widget.nameFocusNode.hasFocus && mounted) {
+      // Kasih jeda dikit supaya tap di item saran sempat kena duluan
+      // sebelum listnya ditutup oleh event kehilangan fokus ini.
+      Future.delayed(const Duration(milliseconds: 150), () {
+        if (mounted) setState(() => _showSuggestions = false);
+      });
+    }
+  }
+
+  /// Autocomplete nama+harga barang — cari dari produk yang sudah pernah
+  /// tercatat (baik dari Kasir Otomatis maupun Nota Manual sebelumnya),
+  /// sama seperti fitur "product suggestion" di Nota Tulis, supaya tidak
+  /// perlu ketik ulang nama & harga barang yang sudah pernah dicatat.
+  void _onNameChanged(String v) {
+    widget.onChanged(v, null, null);
+    _debounce?.cancel();
+    final query = v.trim();
+    if (query.length < 2) {
+      setState(() { _suggestions = []; _showSuggestions = false; });
+      return;
+    }
+    _debounce = Timer(const Duration(milliseconds: 300), () async {
+      final db = ref.read(databaseProvider);
+      final results = await db.productsDao.findSimilarByName(query);
+      if (mounted && _nameCtrl.text.trim() == query) {
+        setState(() {
+          _suggestions = results.take(5).toList();
+          _showSuggestions = _suggestions.isNotEmpty;
+        });
+      }
+    });
+  }
+
+  void _selectSuggestion(Product p) {
+    _nameCtrl.text = p.name;
+    _priceCtrl.text = p.sellPrice.toStringAsFixed(0);
+    widget.onChanged(p.name, p.sellPrice, null);
+    setState(() { _showSuggestions = false; _suggestions = []; });
+    FocusScope.of(context).requestFocus(_priceFocus);
   }
 
   @override
   void dispose() {
+    _debounce?.cancel();
+    widget.nameFocusNode.removeListener(_onNameFocusChange);
     _nameCtrl.dispose();
     _priceCtrl.dispose();
     _qtyCtrl.dispose();
@@ -347,7 +398,7 @@ class _ManualNotaRowState extends State<_ManualNotaRow> {
                       isDense: true,
                     ),
                     style: const TextStyle(fontWeight: FontWeight.w600),
-                    onChanged: (v) => widget.onChanged(v, null, null),
+                    onChanged: _onNameChanged,
                     onSubmitted: (_) => FocusScope.of(context).requestFocus(_priceFocus),
                   ),
                 ),
@@ -357,6 +408,36 @@ class _ManualNotaRowState extends State<_ManualNotaRow> {
                 ),
               ],
             ),
+            if (_showSuggestions)
+              Container(
+                margin: const EdgeInsets.only(bottom: 6),
+                decoration: BoxDecoration(
+                  color: AppColors.bg,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: AppColors.border),
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: _suggestions.map((p) => InkWell(
+                    onTap: () => _selectSuggestion(p),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                      child: Row(children: [
+                        const Icon(Icons.history, size: 14, color: AppColors.textHint),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(p.name,
+                              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+                              overflow: TextOverflow.ellipsis),
+                        ),
+                        Text(CurrencyFormatter.format(p.sellPrice),
+                            style: const TextStyle(
+                                fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.primary)),
+                      ]),
+                    ),
+                  )).toList(),
+                ),
+              ),
             Row(
               children: [
                 Expanded(

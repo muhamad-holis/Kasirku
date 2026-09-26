@@ -17,6 +17,10 @@ import '../../providers/database_provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../../data/database/app_database.dart';
 
+/// Warna khas produk dari Nota Manual (stok unlimited) — sama seperti di
+/// Riwayat Transaksi & Dashboard supaya konsisten secara visual.
+const _manualColor = Color(0xFF8B5CF6);
+
 class StokScreen extends ConsumerStatefulWidget {
   const StokScreen({super.key});
 
@@ -1076,13 +1080,15 @@ class _ProductGridCard extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final isOut = product.stock == 0;
-    final isLow = product.stock <= product.minStock && !isOut;
-    final statusColor = isOut
-        ? AppColors.danger
-        : isLow
-            ? AppColors.warning
-            : AppColors.success;
+    final isOut = !product.isUnlimitedStock && product.stock == 0;
+    final isLow = !product.isUnlimitedStock && product.stock <= product.minStock && !isOut;
+    final statusColor = product.isUnlimitedStock
+        ? _manualColor
+        : isOut
+            ? AppColors.danger
+            : isLow
+                ? AppColors.warning
+                : AppColors.success;
 
     return Card(
       margin: EdgeInsets.zero,
@@ -1164,7 +1170,9 @@ class _ProductGridCard extends ConsumerWidget {
                         borderRadius: BorderRadius.circular(5),
                       ),
                       child: Text(
-                        '${product.stock} ${product.unit}',
+                        product.isUnlimitedStock
+                            ? '∞ ${product.unit}'
+                            : '${product.stock} ${product.unit}',
                         style: TextStyle(
                           fontSize: 9,
                           fontWeight: FontWeight.w700,
@@ -1207,8 +1215,8 @@ class _ProductCard extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final isOut = product.stock == 0;
-    final isLow = product.stock <= product.minStock && !isOut;
+    final isOut = !product.isUnlimitedStock && product.stock == 0;
+    final isLow = !product.isUnlimitedStock && product.stock <= product.minStock && !isOut;
 
     return Card(
       margin: EdgeInsets.zero,
@@ -1283,36 +1291,46 @@ class _ProductCard extends ConsumerWidget {
                   padding: const EdgeInsets.symmetric(
                     horizontal: 10, vertical: 5),
                   decoration: BoxDecoration(
-                    color: isOut
-                        ? AppColors.danger.withOpacity(0.1)
-                        : isLow
-                            ? AppColors.warning.withOpacity(0.1)
-                            : AppColors.success.withOpacity(0.1),
+                    color: product.isUnlimitedStock
+                        ? _manualColor.withOpacity(0.1)
+                        : isOut
+                            ? AppColors.danger.withOpacity(0.1)
+                            : isLow
+                                ? AppColors.warning.withOpacity(0.1)
+                                : AppColors.success.withOpacity(0.1),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Text(
-                    '${product.stock} ${product.unit}',
+                    product.isUnlimitedStock
+                        ? '∞ ${product.unit}'
+                        : '${product.stock} ${product.unit}',
                     style: TextStyle(
                       fontWeight: FontWeight.w700,
                       fontSize: 13,
-                      color: isOut
-                          ? AppColors.danger
-                          : isLow
-                              ? AppColors.warning
-                              : AppColors.success,
+                      color: product.isUnlimitedStock
+                          ? _manualColor
+                          : isOut
+                              ? AppColors.danger
+                              : isLow
+                                  ? AppColors.warning
+                                  : AppColors.success,
                     ),
                   ),
                 ),
                 const SizedBox(height: 3),
                 Text(
-                  isOut ? 'Habis' : isLow ? 'Hampir habis' : 'Aman',
+                  product.isUnlimitedStock
+                      ? 'Manual'
+                      : isOut ? 'Habis' : isLow ? 'Hampir habis' : 'Aman',
                   style: TextStyle(
                     fontSize: 10,
-                    color: isOut
-                        ? AppColors.danger
-                        : isLow
-                            ? AppColors.warning
-                            : Colors.grey.shade400,
+                    color: product.isUnlimitedStock
+                        ? _manualColor
+                        : isOut
+                            ? AppColors.danger
+                            : isLow
+                                ? AppColors.warning
+                                : Colors.grey.shade400,
                     fontWeight: FontWeight.w500,
                   ),
                 ),
@@ -2065,22 +2083,28 @@ class _EditProductSheetState extends ConsumerState<_EditProductSheet>
                     padding: const EdgeInsets.symmetric(
                       horizontal: 12, vertical: 6),
                     decoration: BoxDecoration(
-                      color: widget.product.stock == 0
-                          ? AppColors.danger.withOpacity(0.1)
-                          : widget.product.stock <= widget.product.minStock
-                              ? AppColors.warning.withOpacity(0.1)
-                              : AppColors.success.withOpacity(0.1),
+                      color: widget.product.isUnlimitedStock
+                          ? _manualColor.withOpacity(0.1)
+                          : widget.product.stock == 0
+                              ? AppColors.danger.withOpacity(0.1)
+                              : widget.product.stock <= widget.product.minStock
+                                  ? AppColors.warning.withOpacity(0.1)
+                                  : AppColors.success.withOpacity(0.1),
                       borderRadius: BorderRadius.circular(10),
                     ),
                     child: Text(
-                      'Stok: ${widget.product.stock} ${widget.product.unit}',
+                      widget.product.isUnlimitedStock
+                          ? 'Stok: ∞ (Manual)'
+                          : 'Stok: ${widget.product.stock} ${widget.product.unit}',
                       style: TextStyle(
                         fontWeight: FontWeight.w700,
-                        color: widget.product.stock == 0
-                            ? AppColors.danger
-                            : widget.product.stock <= widget.product.minStock
-                                ? AppColors.warning
-                                : AppColors.success,
+                        color: widget.product.isUnlimitedStock
+                            ? _manualColor
+                            : widget.product.stock == 0
+                                ? AppColors.danger
+                                : widget.product.stock <= widget.product.minStock
+                                    ? AppColors.warning
+                                    : AppColors.success,
                       ),
                     ),
                   ),

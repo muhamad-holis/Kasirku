@@ -154,6 +154,13 @@ class ManualNotaNotifier extends StateNotifier<ManualNotaState> {
         Value(state.customerName.trim().isEmpty ? null : state.customerName.trim());
     final itemsJson = jsonEncode(validItems.map((i) => i.toJson()).toList());
 
+    // Upsert tiap item ke Products (Stok) — nama+harga tersimpan untuk
+    // autocomplete nota berikutnya, dan kalau produknya baru, otomatis jadi
+    // produk unlimited stock (lihat ProductsDao.upsertFromManualNota).
+    for (final item in validItems) {
+      await db.productsDao.upsertFromManualNota(name: item.name, price: item.price);
+    }
+
     if (editingId != null) {
       final companion = ManualNotasCompanion(
         customerName: customerName,

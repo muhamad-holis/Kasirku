@@ -44,25 +44,29 @@ class TransactionsDao extends DatabaseAccessor<AppDatabase>
 
         // BUG #10 FIX: Catat ke stock_movements setiap ada penjualan.
         // Sebelumnya hanya update stock tanpa insert movement → riwayat stok kosong.
-        final newStock = product.stock - item.quantity.value;
-        await (update(products)
-              ..where((t) => t.id.equals(item.productId.value)))
-            .write(ProductsCompanion(
-              stock: Value(newStock),
-              updatedAt: Value(DateTime.now()),
-            ));
+        // Produk unlimited (lahir dari Nota Manual) sengaja DILEWATI di sini —
+        // stoknya tetap 0 selamanya, tidak pernah dikurangi/di-CHECK negatif.
+        if (!product.isUnlimitedStock) {
+          final newStock = product.stock - item.quantity.value;
+          await (update(products)
+                ..where((t) => t.id.equals(item.productId.value)))
+              .write(ProductsCompanion(
+                stock: Value(newStock),
+                updatedAt: Value(DateTime.now()),
+              ));
 
-        // Catat pergerakan stok keluar akibat penjualan
-        await into(stockMovements).insert(
-          StockMovementsCompanion.insert(
-            productId: item.productId.value,
-            type: 'keluar',
-            quantity: item.quantity.value,
-            stockBefore: product.stock,
-            stockAfter: newStock,
-            notes: Value('Penjualan - Invoice $invoiceNumber'),
-          ),
-        );
+          // Catat pergerakan stok keluar akibat penjualan
+          await into(stockMovements).insert(
+            StockMovementsCompanion.insert(
+              productId: item.productId.value,
+              type: 'keluar',
+              quantity: item.quantity.value,
+              stockBefore: product.stock,
+              stockAfter: newStock,
+              notes: Value('Penjualan - Invoice $invoiceNumber'),
+            ),
+          );
+        }
       }
 
       // Poin otomatis: 1 poin per Rp 10.000
