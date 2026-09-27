@@ -63,13 +63,13 @@ class ManualNotaPrinter {
       }
     }
 
-    for (final line in wrapReceiptText(storeName, paperSize: paperSize, doubleWidth: true)) {
+    for (final line in wrapReceiptText(storeName, paperSize: paperSize)) {
       bytes += generator.text(line,
           styles: const PosStyles(
             align: PosAlign.center,
             bold: true,
             height: PosTextSize.size2,
-            width: PosTextSize.size2,
+            width: PosTextSize.size1,
           ));
     }
     if (settings.storeAddress.isNotEmpty) {
@@ -86,11 +86,11 @@ class ManualNotaPrinter {
     bytes += generator.text('Nota Belanja',
         styles: const PosStyles(align: PosAlign.left, bold: true));
     bytes += generator.text('No: ${nota.invoiceNumber}',
-        styles: const PosStyles(align: PosAlign.center));
-    bytes += generator.text(dateStr, styles: const PosStyles(align: PosAlign.center));
+        styles: const PosStyles(align: PosAlign.left));
+    bytes += generator.text(dateStr, styles: const PosStyles(align: PosAlign.left));
     if ((nota.customerName ?? '').isNotEmpty) {
       bytes += generator.text('Pelanggan: ${nota.customerName}',
-          styles: const PosStyles(align: PosAlign.center));
+          styles: const PosStyles(align: PosAlign.left));
     }
     bytes += generator.hr();
 
@@ -151,7 +151,7 @@ class ManualNotaPrinter {
             styles: const PosStyles(align: PosAlign.center, bold: true));
       }
     }
-    bytes += generator.feed(3);
+    bytes += generator.feed(1);
     bytes += generator.cut();
     return bytes;
   }
