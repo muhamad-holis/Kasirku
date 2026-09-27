@@ -18,6 +18,7 @@ import '../../core/theme/app_theme.dart';
 import '../../core/utils/responsive.dart';
 import '../providers/auth_provider.dart';
 import '../screens/kasir_management/kasir_management_screen.dart';
+import '../screens/label/label_screen.dart';
 
 final currentNavIndexProvider = StateProvider<int>((ref) => 0);
 
@@ -338,6 +339,16 @@ class _LainnyaHomeScreen extends ConsumerWidget {
                       MaterialPageRoute(builder: (_) => ProviderScope(
                         parent: ProviderScope.containerOf(context),
                         child: const NotifikasiScreen()))),
+                ),
+                _MenuCard(
+                  icon: Icons.sell_outlined,
+                  label: 'Cetak Label',
+                  description: 'Label harga barang',
+                  color: AppColors.warning,
+                  onTap: () => Navigator.push(context,
+                      MaterialPageRoute(builder: (_) => ProviderScope(
+                        parent: ProviderScope.containerOf(context),
+                        child: const LabelScreen()))),
                 ),
                 _MenuCard(
                   imagePath: 'assets/icons/menu/kalkulator.png',
